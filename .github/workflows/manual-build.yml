@@ -1,0 +1,67 @@
+name: Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: "Application ID / package name"
+        required: true
+        default: "com.android.packageinstaller"
+
+# Set the absolute minimum permissions for the GITHUB_TOKEN
+permissions:
+  contents: read # Required to checkout the code
+  packages: read # Required if you pull dependencies from GitHub Packages
+
+concurrency:
+  group: manual-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Preview Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # Always build from the main branch at trigger time
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: "zulu"
+          java-version: "25"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
+          build-scan-terms-of-use-agree: "yes"
+          build-scan-publish: false
+          # Keep read-only to prevent cache poisoning
+          cache-read-only: true
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Build Preview Debug APK
+        # Use GITHUB_TOKEN only if strictly necessary for fetching packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew assemblePreviewDebug --no-configuration-cache -PAPP_ID="${{ inputs.app_id }}"
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: manual-debug-apk-${{ github.run_number }}
+          path: app/build/outputs/apk/Preview/debug/app-Preview-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+          archive: false
