@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build Preview Debug APK
+    name: Build Preview Release APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -50,18 +50,71 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Build Preview Debug APK
+      - name: Decode and set up signing key
+        env:
+          SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -z "${SIGNING_STORE_PASSWORD:-}" ] || [ -z "${SIGNING_KEY_STORE_BASE64:-}" ] || [ -z "${SIGNING_KEY_PASSWORD:-}" ] || [ -z "${SIGNING_KEY_ALIAS:-}" ]; then
+            echo "Signing secrets not fully configured. Falling back to the default debug keystore."
+            exit 0
+          fi
+          mkdir -p keystore
+          echo "${SIGNING_KEY_STORE_BASE64}" | base64 --decode > keystore/carlyu.jks
+          echo "storeFile=keystore/carlyu.jks" > keystore.properties
+          echo "keyAlias=${SIGNING_KEY_ALIAS}" >> keystore.properties
+          echo "keyPassword=${SIGNING_KEY_PASSWORD}" >> keystore.properties
+          echo "storePassword=${SIGNING_STORE_PASSWORD}" >> keystore.properties
+
+      - name: Build Preview Release APK
         # Use GITHUB_TOKEN only if strictly necessary for fetching packages
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew assemblePreviewDebug --no-configuration-cache -PAPP_ID="${{ inputs.app_id }}"
+        run: ./gradlew assemblePreviewRelease --no-configuration-cache -PAPP_ID="${{ inputs.app_id }}"
 
-      - name: Upload Debug APK
+      - name: Find and Rename Release APK
+        id: rename_apk
+        run: |
+          PROJECT_NAME="InstallerX-Revived"
+          VERSION_TAG=$(git rev-parse --short=7 HEAD)
+
+          APK_DIR=$(find app/build/outputs/apk -type d | grep -iE '/preview/release$' | head -n 1)
+          if [ -z "$APK_DIR" ]; then
+            echo "ERROR: Preview APK output directory not found"
+            ls -R app/build/outputs/apk
+            exit 1
+          fi
+          APK_PATH=$(find "$APK_DIR" -maxdepth 1 -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "ERROR: Could not find the release APK!"
+            ls -R app/build/outputs/apk
+            exit 1
+          fi
+
+          NEW_APK_NAME="${PROJECT_NAME}-${VERSION_TAG}.apk"
+          NEW_APK_PATH="${APK_DIR}/${NEW_APK_NAME}"
+
+          mv "$APK_PATH" "$NEW_APK_PATH"
+
+          echo "apk=${NEW_APK_PATH}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Release APK
         uses: actions/upload-artifact@v7
         with:
-          name: manual-debug-apk-${{ github.run_number }}
-          path: app/build/outputs/apk/Preview/debug/app-Preview-debug.apk
+          name: manual-release-apk-${{ github.run_number }}
+          path: ${{ steps.rename_apk.outputs.apk }}
           if-no-files-found: error
           retention-days: 7
+          archive: false
+
+      - name: Upload mapping
+        uses: actions/upload-artifact@v7
+        with:
+          name: mapping
+          path: app/build/outputs/apk/**/release/mapping.txt
+          retention-days: 15
           archive: false
