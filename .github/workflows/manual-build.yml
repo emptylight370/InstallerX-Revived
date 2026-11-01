@@ -116,5 +116,5 @@ jobs:
         with:
           name: mapping
           path: app/build/outputs/apk/**/release/mapping.txt
-          retention-days: 15
+          retention-days: 1
           archive: false
