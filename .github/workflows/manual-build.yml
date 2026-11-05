@@ -119,6 +119,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: mapping
-          path: app/build/outputs/apk/**/release/mapping.txt
+          path: app/build/outputs/mapping/**/mapping.txt
           retention-days: 1
           archive: false
