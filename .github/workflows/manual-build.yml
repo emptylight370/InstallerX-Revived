@@ -7,6 +7,9 @@ on:
         description: "Application ID / package name"
         required: true
         default: "com.android.packageinstaller"
+      version_tag:
+        description: "Input version tag exactly (e.g. 26.03 or 26.03.01)"
+        required: true
 
 # Set the absolute minimum permissions for the GITHUB_TOKEN
 permissions:
@@ -73,13 +76,14 @@ jobs:
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew assemblePreviewRelease --no-configuration-cache -PAPP_ID="${{ inputs.app_id }}"
+        # Explicitly pass the user input to override the dynamic date version in Gradle
+        run: ./gradlew assemblePreviewRelease --no-configuration-cache -PAPP_ID="${{ inputs.app_id }}" -PVERSION_NAME="${{ inputs.version_tag }}"
 
       - name: Find and Rename Release APK
         id: rename_apk
         run: |
           PROJECT_NAME="InstallerX-Revived"
-          VERSION_TAG=$(git rev-parse --short=7 HEAD)
+          VERSION_TAG="${{ inputs.version_tag }}"
 
           APK_DIR=$(find app/build/outputs/apk -type d | grep -iE '/preview/release$' | head -n 1)
           if [ -z "$APK_DIR" ]; then
